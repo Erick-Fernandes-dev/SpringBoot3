@@ -383,3 +383,427 @@ public record DadosCadastroMedico(
         DadosEndereco endereco) {
 }
 ```
+
+### Resumo do Módulo
+
+- Adicionar novas dependências no projeto;
+- Mapear uma entidade JPA e criar uma interface Repository para ela;
+- Utilizar o Flyway como ferramenta de Migrations do projeto;
+- Realizar validações com Bean Validation utilizando algumas de suas anotações, como a `@NotBlank`.
+
+#### @GetMapping
+
+- É uma anotação composta que funciona como um atalho para @RequestMapping(method = RequestMethod.GET).
+- É a anotação mais recente
+
+```java
+@GetMapping
+    public List<DadosListagemMedico> listar() {
+        //converter de Medico para DadosListagemMedico
+        return repository.findAll().stream().map(DadosListagemMedico::new).toList();
+    }
+```
+### DTOs ou entidades?
+
+Estamos utilizando DTOs para representar os dados que recebemos e devolvemos pela API, mas você provavelmente deve estar se perguntando “Por que ao invés de criar um DTO não devolvemos diretamente a entidade JPA no Controller?”. Para fazer isso, bastaria alterar o método `listar` no Controller para:
+
+```java 
+@GetMapping
+public List<Medico> listar() {
+    return repository.findAll();
+}
+```
+Desse jeito o código ficaria mais enxuto e não precisaríamos criar o DTO no projeto. Mas, será que isso realmente é uma boa ideia?
+
+#### Os problemas de receber/devolver entidades JPA
+
+De fato é muito mais simples e cômodo não utilizar DTOs e sim lidar diretamente com as entidades JPA nos controllers. Porém, essa abordagem tem algumas desvantagens, inclusive causando vulnerabilidade na aplicação para ataques do tipo **Mass Assignment**.
+
+Um dos problemas consiste no fato de que, ao retornar uma entidade JPA em um método de um Controller, o Spring vai gerar o JSON contendo **todos** os atributos dela, sendo que nem sempre esse é o comportamento que desejamos.
+
+Eventualmente podemos ter atributos que não desejamos que sejam devolvidos no JSON, seja por motivos de segurança, no caso de dados sensíveis, ou mesmo por não serem utilizados pelos clientes da API.
+
+#### Utilização da anotação @JsonIgnore
+
+Nessa situação, poderíamos utilizar a anotação `@JsonIgnore`, que nos ajuda a ignorar certas propriedades de uma classe Java quando ela for serializada para um objeto JSON.
+
+Sua utilização consiste em adicionar a anotação nos atributos que desejamos ignorar quando o JSON for gerado. Por exemplo, suponha que temos uma entidade JPA `Funcionario`, na qual desejamos ignorar o atributo `salario`:
+
+```java
+@Getter
+@NoArgsConstructor
+@EqualsAndHashCode(of = "id")
+@Entity(name = "Funcionario")
+@Table(name = "funcionarios")
+public class Funcionario {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nome;
+    private String email;
+
+    @JsonIgnore
+    private BigDecimal salario;
+
+    //restante do código omitido…
+}
+```
+
+No exemplo anterior, o atributo `salario` da classe `Funcionario` não será exibido nas respostas JSON e o problema estaria solucionado.
+
+Entretanto, pode acontecer de existir algum outro endpoint da API na qual precisamos enviar no JSON o salário dos funcionários, sendo que nesse caso teríamos problemas, pois com a anotação `@JsonIgnore` tal atributo **nunca** será enviado no JSON, e ao remover a anotação o atributo **sempre** será enviado. Perdemos, com isso, a flexibilidade de controlar quando determinados atributos devem ser enviados no JSON e quando não.
+
+#### DTO
+
+O padrão DTO (Data Transfer Object) é um padrão de arquitetura que era bastante utilizado antigamente em aplicações Java distribuídas (arquitetura cliente/servidor) para representar os dados que eram enviados e recebidos entre as aplicações cliente e servidor.
+
+O padrão DTO pode (e deve) ser utilizado quando não queremos expor todos os atributos de alguma entidade do nosso projeto, situação igual a dos salários dos funcionários que abordamos anteriormente. Além disso, com a flexibilidade e a opção de filtrar quais dados serão transmitidos, podemos poupar tempo de processamento.
+
+
+#### Loop infinito causando StackOverflowError
+
+Outro problema muito recorrente ao se trabalhar diretamente com entidades JPA acontece quando uma entidade possui algum autorrelacionamento ou relacionamento bidirecional. Por exemplo, considere as seguintes entidades JPA:
+
+```java 
+@Getter
+@NoArgsConstructor
+@EqualsAndHashCode(of = "id")
+@Entity(name = "Produto")
+@Table(name = "produtos")
+public class Produto {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nome;
+    private String descricao;
+    private BigDecimal preco;
+
+    @ManyToOne
+    @JoinColumn(name = “id_categoria”)
+    private Categoria categoria;
+
+    //restante do código omitido…
+}
+```
+
+```java
+
+@Getter
+@NoArgsConstructor
+@EqualsAndHashCode(of = "id")
+@Entity(name = "Produto")
+@Table(name = "produtos")
+public class Produto {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nome;
+    private String descricao;
+    private BigDecimal preco;
+
+    @ManyToOne
+    @JoinColumn(name = “id_categoria”)
+    private Categoria categoria;
+
+    //restante do código omitido…
+}
+
+```
+
+```java
+@Getter
+@NoArgsConstructor
+@EqualsAndHashCode(of = "id")
+@Entity(name = "Categoria")
+@Table(name = "categorias")
+public class Categoria {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nome;
+
+    @OneToMany(mappedBy = “categoria”)
+    private List<Produto> produtos = new ArrayList<>();
+
+    //restante do código omitido…
+}
+```
+Ao retornar um objeto do tipo `Produto` no Controller, o Spring teria problemas para gerar o JSON desse objeto, causando uma exception do tipo `StackOverflowError`. Esse problema ocorre porque o objeto produto tem um atributo do tipo `Categoria`, que por sua vez tem um atributo do tipo `List<Produto>`, causando assim um loop infinito no processo de serialização para JSON.
+
+Tal problema pode ser resolvido com a utilização da anotação `@JsonIgnore` ou com a utilização das anotações `@JsonBackReference` e `@JsonManagedReference`, mas também poderia ser evitado com a utilização de um DTO que representa apenas os dados que devem ser devolvidos no JSON.
+
+#### Paginação e ordenação
+
+A paginação pode ser utilizida quando é feita uma requisição de consulta, serve para filtrar a quantidade de registros que você quer buscar. 
+
+Já na Ordenação, você consegue dar mais inteligência a sua API, além de dar mais capacidade ao client para trabalhar com os dados sob demanda.
+
+```java
+@GetMapping
+    public Page<DadosListagemMedico> listar(@PageableDefault(size = 10, sort = {"nome"}) Pageable paginacao) {
+        //converter de Medico para DadosListagemMedico
+//        return repository.findAll().stream().map(DadosListagemMedico::new).toList();
+
+        return repository.findAll(paginacao).map(DadosListagemMedico::new);
+
+    }
+```
+### Parâmetros de paginação
+
+Conforme aprendemos nos vídeos anteriores, por padrão, os parâmetros utilizados para realizar a paginação e a ordenação devem se chamar **page**, **size** e **sort**. Entretanto, o Spring Boot permite que os nomes de tais parâmetros sejam modificados via configuração no arquivo **application.properties**.
+
+Por exemplo, poderíamos traduzir para português os nomes desses parâmetros com as seguintes propriedades:
+
+```properties
+spring.data.web.pageable.page-parameter=pagina
+spring.data.web.pageable.size-parameter=tamanho
+spring.data.web.sort.sort-parameter=ordem
+```
+Com isso, nas requisições que utilizam paginação, devemos utilizar esses nomes que foram definidos. Por exemplo, para listar os médicos de nossa API trazendo apenas 5 registros da página 2, ordenados pelo e-mail e de maneira decrescente, a URL da requisição deve ser:
+
+```html
+http://localhost:8080/medicos?tamanho=5&pagina=1&ordem=email,desc
+```
+
+### Resumo do módulo
+
+- Utilizar a anotação `@GetMapping` para mapear métodos em Controllers que produzem dados;
+- Utilizar a interface `Pageable` do Spring para realizar consultas com paginação;
+- Controlar a paginação e a ordenação dos dados devolvidos pela API com os parâmetros `page`, `size` e `sort`;
+- Configurar o projeto para que os comandos SQL sejam exibidos no console.
+
+### Requisições PUT
+
+- Serve para atualizar o dados
+
+**Criar o método com a annotation @PutMapping**
+```java
+
+@PutMapping
+    @Transactional
+    public void atualizar(@RequestBody @Valid DadosAtualizarPaciente dados) {
+
+        var paciente = repository.getReferenceById(dados.id());
+        paciente.atualizarInformacoes(dados);
+
+    }
+
+```
+
+**Cria um uma classe RECORD para atualizar os dados**
+
+```java
+package med.voll.api.paciente;
+
+import med.voll.api.endereco.DadosEndereco;
+
+public record DadosAtualizarPaciente(
+        Long id,
+        String nome,
+        String email,
+        String telefone,
+        String cpf,
+        DadosEndereco endereco) {
+
+}
+```
+**Criar método de atualização de informações na classe Paciente**
+
+```java
+public void atualizarInformacoes(DadosAtualizarPaciente dados) {
+
+        if (dados.nome() != null) {
+            this.nome = dados.nome();
+        }
+        if (dados.email() != null) {
+            this.email = dados.email();
+        }
+        if (dados.telefone() != null) {
+            this.telefone = dados.telefone();
+        }
+        if (dados.cpf() != null) {
+            this.cpf = dados.cpf();
+        }
+        if (dados.endereco() != null) {
+            endereco.atualizarInformacoes(dados.endereco());
+        }
+    }
+```
+**Criar método de atualização de informações na classe Endereco**
+
+```java
+public void atualizarInformacoes(DadosEndereco endereco) {
+
+        if (endereco.logradouro() != null) {
+            this.logradouro = endereco.logradouro();
+        }
+
+        if (endereco.bairro() != null) {
+            this.bairro = endereco.bairro();
+        }
+
+        if (endereco.cep() != null) {
+            this.cep = endereco.cep();
+        }
+
+        if (endereco.numero() != null) {
+            this.numero = endereco.numero();
+        }
+
+        if (endereco.complemento() != null) {
+            this.complemento = endereco.complemento();
+        }
+
+        if (endereco.cidade() != null) {
+            this.cidade = endereco.cidade();
+        }
+
+        if (endereco.uf() != null) {
+            this.uf = endereco.uf();
+        }
+
+    }
+```
+
+### Mass Assignment Attack
+
+**Mass Assignment Attack** ou Ataque de Atribuição em Massa, em português, ocorre quando um usuário é capaz de inicializar ou substituir parâmetros que não deveriam ser modificados na aplicação. Ao incluir parâmetros adicionais em uma requisição, sendo tais parâmetros válidos, um usuário mal-intencionado pode gerar um efeito colateral indesejado na aplicação.
+
+O conceito desse ataque refere-se a quando você injeta um conjunto de valores diretamente em um objeto, daí o nome atribuição em massa, que sem a devida validação pode causar sérios problemas.
+
+Vamos a um exemplo prático. Suponha que você tem o seguinte método, em uma classe Controller, utilizado para cadastrar um usuário na aplicação:
+
+```java
+@PostMapping
+@Transactional
+public void cadastrar(@RequestBody @Valid Usuario usuario) {
+    repository.save(usuario);
+}
+```
+
+E a entidade JPA que representa o usuário:
+
+```java
+@Getter
+@Setter
+@NoArgsConstructor
+@EqualsAndHashCode(of = "id")
+@Entity(name = "Usuario")
+@Table(name = "usuarios")
+public class Usuario {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String nome;
+    private String email;
+    private Boolean admin = false;
+
+    //restante do código omitido…
+}
+```
+
+Repare que o atributo `admin` da classe `Usuario` é inicializado como `false`, indicando que um usuário deve sempre ser cadastrado como não sendo um administrador. Porém, se na requisição for enviado o seguinte JSON:
+
+```json
+{
+    “nome” : “Rodrigo”,
+    “email” : “rodrigo@email.com”,
+    “admin” : true
+}
+```
+O usuário será cadastrado com o atributo `admin` preenchido como `true`. Isso acontece porque o atributo `admin` enviado no JSON existe na classe que está sendo recebida no Controller, sendo considerado então um atributo válido e que será preenchido no objeto `Usuario` que será instanciado pelo Spring.
+
+Então, como fazemos para prevenir esse problema?
+
+#### Prevenção
+
+O uso do padrão DTO nos ajuda a evitar esse problema, pois ao criar um DTO definimos nele apenas os campos que podem ser recebidos na API, e no exemplo anterior o DTO não teria o atributo `admin`.
+
+Novamente, vemos mais uma vantagem de se utilizar o padrão DTO para representar os dados que chegam e saem da API.
+
+### PUT ou PATCH
+
+Escolher entre o método HTTP PUT ou PATCH é uma dúvida comum que surge quando estamos desenvolvendo APIs e precisamos criar um endpoint para atualização de recursos. Vamos entender as diferenças entre as duas opções e quando utilizar cada uma.
+
+#### PUT
+O método PUT substitui todos os atuais dados de um recurso pelos dados passados na requisição, ou seja, estamos falando de uma atualização integral. Então, com ele, fazemos a atualização total de um recurso em apenas uma requisição.
+
+#### PATCH
+O método PATCH, por sua vez, aplica modificações parciais em um recurso. Logo, é possível modificar apenas uma parte de um recurso. Com o PATCH, então, realizamos atualizações parciais, o que torna as opções de atualização mais flexíveis.
+
+#### Qual escolher?
+Na prática, é difícil saber qual método utilizar, pois nem sempre saberemos se um recurso será atualizado parcialmente ou totalmente em uma requisição - a não ser que realizemos uma verificação quanto a isso, algo que não é recomendado.
+
+O mais comum então nas aplicações é utilizar o método PUT para requisições de atualização de recursos em uma API
+
+### Delete e exclusão Lógica
+
+**@DeleteMapping**
+
+```java
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public void excluir(@PathVariable Long id) {
+//        repository.deleteById(id);
+    }
+```
+**exclusão Lógica**
+
+```java
+    @DeleteMapping("/{id}")
+    @Transactional
+    public void excluir(@PathVariable Long id) {
+//        repository.deleteById(id);
+        //exclusao logica
+        var medico = repository.getReferenceById(id);
+        medico.excluir();
+
+    }
+```
+**Cria um novo atributo na classe Medico**
+
+```java
+private Boolean ativo;
+
+ public Medico(DadosCadastroMedico dados) {
+        this.ativo = true;
+        this.nome = dados.nome();
+        this.email = dados.email();
+        this.telefone = dados.telefone();
+        this.crm = dados.crm();
+        this.especialidade = dados.especialidade();
+        this.endereco = new Endereco(dados.endereco());
+    }
+```
+**Cria um método na classe Repository de Medico que retorne True**
+
+```java
+Page<Medico> findAllAtivoTrue(Pageable paginacao);
+```
+
+**Inclua esse Método no método listar**
+
+```java
+@GetMapping
+    public Page<DadosListagemMedico> listar(@PageableDefault(size = 10, sort = {"nome"}) Pageable paginacao) {
+        //converter de Medico para DadosListagemMedico
+//        return repository.findAll().stream().map(DadosListagemMedico::new).toList();
+
+        return repository.findAllAtivoTrue(paginacao).map(DadosListagemMedico::new);
+
+    }
+```
+
+### Resumo do módulo
+
+- Mapear requisições PUT com a anotação `@PutMapping`;
+- Escrever um código para atualizar informações de um registro no banco de dados;
+- Mapear requisições DELETE com a anotação `@DeleteMapping`;
+- Mapear parâmetros dinâmicos em URL com a anotação `@PathVariable`;
+- Implementar o conceito de exclusão lógica com o uso de um atributo booleano.
