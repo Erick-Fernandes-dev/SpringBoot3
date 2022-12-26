@@ -31,7 +31,7 @@ public class MedicoController {
         //converter de Medico para DadosListagemMedico
 //        return repository.findAll().stream().map(DadosListagemMedico::new).toList();
 
-        return repository.findAllAtivoTrue(paginacao).map(DadosListagemMedico::new);
+        return repository.findAllByAtivoTrue(paginacao).map(DadosListagemMedico::new);
 
     }
 
