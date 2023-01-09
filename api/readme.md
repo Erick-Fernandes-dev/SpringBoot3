@@ -387,4 +387,11 @@ Ao longo do curso utilizaremos o algoritmo BCrypt, que é bastante popular atual
 
 ### Json Web Token
 
-**JSON Web Token**, ou JWT, é um padrão utilizado para a geração de tokens, que nada mais são do que Strings, representando, de maneira segura, informações que serão compartilhadas entre dois sistemas. 
+**JSON Web Token**, ou JWT, é um padrão utilizado para a geração de tokens, que nada mais são do que Strings, representando, de maneira segura, informações que serão compartilhadas entre dois sistemas.
+
+``@Component`` - É utilizado para que o Spring carregue uma classe/componente genérico
+, ou seja, serve apenas para carregar uma classe automaticamente.
+
+### Recuperando o token
+
+``Bearer`` - Por padrão, o tipo de prefixo Bearer é utilizado para tokens JWT. 
