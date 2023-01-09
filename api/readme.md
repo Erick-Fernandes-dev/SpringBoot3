@@ -375,5 +375,16 @@ Existem diversos algoritmos de hashing que podem ser utilizados para fazer essa 
 
 Ao longo do curso utilizaremos o algoritmo BCrypt, que é bastante popular atualmente. Essa opção também leva em consideração o fato de que o Spring Security já nos fornece uma classe que o implementa.
 
+```@Bean``` - Serve para exportar uma classe para o Spring, fazendo com que ele consiga carregá-la e realize a sua injeção de dependência em outras
 
 
+### Resumo do módulo
+
+- Funciona o processo de autenticação e autorização em uma API Rest;
+- Adicionar o Spring Security ao projeto;
+- Funciona o comportamento padrão do Spring Security em uma aplicação;
+- Implementar o processo de autenticação na API, de maneira Stateless, utilizando as classes e configurações do Spring Security.
+
+### Json Web Token
+
+**JSON Web Token**, ou JWT, é um padrão utilizado para a geração de tokens, que nada mais são do que Strings, representando, de maneira segura, informações que serão compartilhadas entre dois sistemas. 
