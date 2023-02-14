@@ -3,7 +3,9 @@
 ## Padronizando retornos da API
 
 **Código 204** - Requisição processada e sem conteúdo
+
 **Código 201** - Significa que a requisição foi processada e o novo recurso foi criado (Created)
+
 **Código 200** - Código do protocolo HTTP que significa "OK"
 
 
